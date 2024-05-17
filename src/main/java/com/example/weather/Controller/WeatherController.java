@@ -20,13 +20,14 @@ public class WeatherController {
 
 	    @GetMapping("/hourly")
 	    public List<Weather_Hourly> getHourlyWeather(@RequestParam String city) {
-	    	
+	    
 	        return weatherService.getHourlyWeather(city);
 	    }
 	 // Thêm vào WeatherController
 	    @GetMapping("/daily")
 	    public List<Weather_Nextday> getDailyWeatherForecast(@RequestParam String city) {
-	        weatherService.updateDailyWeatherForecast(city); // Cập nhật dữ liệu thời tiết của 7 ngày tiếp theo
+	    
+	       //weatherService.updateDailyWeatherForecast(city); // Cập nhật dữ liệu thời tiết của 7 ngày tiếp theo
 	        // Trả về dữ liệu thời tiết của 7 ngày tiếp theo
 	        return weatherService.getDailyWeatherForecast(city);
 	    }

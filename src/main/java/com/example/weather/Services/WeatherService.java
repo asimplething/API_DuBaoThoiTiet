@@ -194,6 +194,7 @@
 	//Check xem trong database đã lưu thời gian hiện tại chưa hay vẫn còn giữ dữ liệu của ngày cũ để xóa đi cập nhật lại:
 	    @Scheduled(cron = "0 0 0 * * ?") // Mỗi ngày vào 0:00
 	    public void updateDailyWeatherForecast(String city) {
+	    	weatherNextday_Repository.deleteAll();
 	        // Thực hiện logic tính toán thông tin thời tiết của 7 ngày tiếp theo dựa trên dữ liệu hiện tại và lưu vào cơ sở dữ liệu
 	        // Lưu ý: thực hiện logic tính toán cho thông tin thời tiết của 7 ngày tiếp theo ở đây
 	        // Sau đó, lưu vào cơ sở dữ liệu bằng cách sử dụng Weather_Daily và Weather_Repo
@@ -213,7 +214,7 @@
 	            for (int i = 1; i <= 7; i++) {
 	                next7Days.add(currentDate.plusDays(i));
 	            }
-	
+	            
 	            // Tính toán và lưu thông tin thời tiết của 7 ngày tiếp theo vào cơ sở dữ liệu
 	            for (LocalDate date : next7Days) {
 	                // Thực hiện tính toán thông tin thời tiết cho ngày hiện tại và lưu vào cơ sở dữ liệu
