@@ -20,7 +20,8 @@
 	import org.springframework.web.client.RestTemplate;
 	
 	import java.util.Random;
-	import java.util.HashMap;
+import java.util.stream.Collectors;
+import java.util.HashMap;
 	@Service
 	public class WeatherService {
 		@Autowired
@@ -73,8 +74,7 @@
 	        weatherRepository.deleteAll();
 	    }
 	    @Scheduled(fixedRate = 3600000) // Cập nhật mỗi giờ
-	    public void updateHourlyWeather(String city) {
-	    	  WeatherApiResponse weatherData = fetchWeatherFromExternalApi(city);
+	    public void updateHourlyWeather(String city,WeatherApiResponse weatherData) {
 	    	  if (weatherData == null) return;
 	    	//Lấy thời gian hiện tại để tính toán thời tiết cho các giờ tiếp theo.
 	        String currentTimeStr = weatherData.getCurrent().getLast_updated();
@@ -82,24 +82,17 @@
 	        int currentHour = currentTime.getHour();
 	        LocalDate currentDate = currentTime.toLocalDate();
 	        
-	    	 // Kiểm tra xem trong cơ sở dữ liệu đã có dữ liệu cho ngày hiện tại của thành phố đó chưa
-	        List<Weather_Hourly> existingData = weatherRepository.findByCityAndDate(city, currentDate);
-	
-	        if (existingData.isEmpty()) {
-	            // Nếu chưa có dữ liệu hoặc dữ liệu đã cũ, xóa dữ liệu cũ
-	            weatherRepository.deleteAllByCityAndDate(city, currentDate);
-	        }
+	    	 
+
 	      
 	
 	        
 	        	
 	        	 double currentTemperature = weatherData.getCurrent().getTemp_c();
-	        
-	
-	            List<Double> hourlyTemperatures = calculateHourlyTemperatures(currentTemperature, currentHour);
-	            for (int i = currentHour+1; i < 24; i++) {
+	        	 List<Double> hourlyTemperatures = calculateHourlyTemperatures(currentTemperature, currentHour);
+	            
+	        	 for (int i = currentHour+1; i < 24; i++) {
 	            	String temperature = String.format("%.1f°C", hourlyTemperatures.get(i - currentHour - 1));
-	               // String temperature = (15 + random.nextInt(10)) + "°C"; // Random nhiệt độ
 	                String condition = getRandomWeatherCondition(currentTime.plusHours(i - currentHour),temperature);
 	                String icon = condition != null ? DAY_WEATHER_CONDITIONS.getOrDefault(condition, NIGHT_WEATHER_CONDITIONS.get(condition)) : null;
 	                
@@ -169,11 +162,28 @@
 	
 	    	    // Lấy dữ liệu thời tiết cho ngày đúng của khu vực quốc gia
 	    	    List<Weather_Hourly> weatherList = weatherRepository.findByCityAndDate(city, localDate);
-	    	    if (weatherList.isEmpty()) {
-	    	        // Nếu không có dữ liệu, cập nhật lại từ API và lưu vào cơ sở dữ liệu
-	    	        updateHourlyWeather(city);
+	    	    if (weatherList.isEmpty()) { // Nếu không có dữ liệu, cập nhật lại từ API và lưu vào cơ sở dữ liệu
+	    	       
+	    	        updateHourlyWeather(city,weatherResponse);
 	    	        // Lấy lại dữ liệu từ cơ sở dữ liệu sau khi đã cập nhật
 	    	        weatherList = weatherRepository.findByCityAndDate(city, localDate);
+	    	    }
+	    	    else //nếu đã có rồi thì kiểm tra xem giờ đã được cập nhật mới chưa, xóa những giờ cũ đi.
+	    	    {
+	    	    	   String currentTimeStr = weatherResponse.getCurrent().getLast_updated();
+	    		        LocalDateTime currentTime = LocalDateTime.parse(currentTimeStr, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
+	    	        for (Weather_Hourly weatherHourly : weatherList) {
+	    	            int hourlyTime = Integer.parseInt(weatherHourly.getTime().substring(0, 2)); // Lấy giá trị giờ từ chuỗi
+	    	            // Kiểm tra xem mốc thời gian trong cơ sở dữ liệu có còn hiện tại không
+	    	            if (hourlyTime<=currentTime.getHour()) {
+	    	                // Nếu thời gian trong cơ sở dữ liệu đã qua, xóa mục đó
+	    	                weatherRepository.delete(weatherHourly);
+	    	            }
+	    	        }
+	    	       
+	    	        // Lấy lại dữ liệu từ cơ sở dữ liệu sau khi đã cập nhật
+	    	        weatherList = weatherRepository.findByCityAndDate(city, localDate);
+		           
 	    	    }
 	    	    return weatherList;
 	    }
@@ -193,14 +203,13 @@
 	    
 	//Check xem trong database đã lưu thời gian hiện tại chưa hay vẫn còn giữ dữ liệu của ngày cũ để xóa đi cập nhật lại:
 	    @Scheduled(cron = "0 0 0 * * ?") // Mỗi ngày vào 0:00
-	    public void updateDailyWeatherForecast(String city) {
-	    	weatherNextday_Repository.deleteAll();
+	    public void updateDailyWeatherForecast(String city,WeatherApiResponse currentWeather) {
+
 	        // Thực hiện logic tính toán thông tin thời tiết của 7 ngày tiếp theo dựa trên dữ liệu hiện tại và lưu vào cơ sở dữ liệu
 	        // Lưu ý: thực hiện logic tính toán cho thông tin thời tiết của 7 ngày tiếp theo ở đây
 	        // Sau đó, lưu vào cơ sở dữ liệu bằng cách sử dụng Weather_Daily và Weather_Repo
 	    	// Lấy thông tin thời tiết hiện tại cho thành phố
-	        WeatherApiResponse currentWeather = fetchWeatherFromExternalApi(city);
-	
+
 	        if (currentWeather != null) {
 	            // Lấy ngày hiện tại
 	        	 // Lấy thời gian hiện tại từ dữ liệu thời tiết
@@ -227,18 +236,34 @@
 	// Thêm phương thức getDailyWeatherForecast
 	    public List<Weather_Nextday> getDailyWeatherForecast(String city) {
 	    
-	    	
+	    	WeatherApiResponse currentWeather = fetchWeatherFromExternalApi(city);
 	        // Lấy thông tin dự báo thời tiết cho 7 ngày tiếp theo từ cơ sở dữ liệu
 	        List<Weather_Nextday> forecast = weatherNextday_Repository.findDailyWeatherForecast(city);
-	
+
+	        // Lấy thời gian hiện tại từ dữ liệu thời tiết
+	        String currentTimeStr = currentWeather.getCurrent().getLast_updated();
+	        LocalDateTime currentDateTime = LocalDateTime.parse(currentTimeStr, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
+	        // Lấy ngày hiện tại của thành phố từ thời gian hiện tại
+	        LocalDate currentDate = currentDateTime.toLocalDate();
+
+	        // Lọc bỏ những ngày đã qua
+	        for (Weather_Nextday weatherNextday : forecast) {
+	            if (weatherNextday.getDate().isBefore(currentDate)) {
+	                weatherNextday_Repository.delete(weatherNextday);
+	            }
+	        }
+
+	        // Lấy lại dự báo thời tiết sau khi xóa những ngày đã qua
+	        forecast = weatherNextday_Repository.findDailyWeatherForecast(city);
+
 	        // Nếu không có dữ liệu thời tiết dự báo cho 7 ngày tiếp theo trong cơ sở dữ liệu
 	        if (forecast.isEmpty()) {
 	            // Cập nhật thông tin thời tiết dự báo từ nguồn dữ liệu bên ngoài
-	            updateDailyWeatherForecast(city);
+	            updateDailyWeatherForecast(city, currentWeather);
 	            // Sau khi cập nhật, truy vấn lại cơ sở dữ liệu để lấy dữ liệu mới
 	            forecast = weatherNextday_Repository.findDailyWeatherForecast(city);
 	        }
-	
+
 	        return forecast;
 	    }
 	    private Weather_Nextday calculateNextdayWeather(WeatherApiResponse currentWeather, LocalDate date, String city) {
