@@ -194,6 +194,7 @@
 	//Check xem trong database đã lưu thời gian hiện tại chưa hay vẫn còn giữ dữ liệu của ngày cũ để xóa đi cập nhật lại:
 	    @Scheduled(cron = "0 0 0 * * ?") // Mỗi ngày vào 0:00
 	    public void updateDailyWeatherForecast(String city) {
+	    	//xóa dữ liệu cũ của ngày trước
 	    	weatherNextday_Repository.deleteAll();
 	        // Thực hiện logic tính toán thông tin thời tiết của 7 ngày tiếp theo dựa trên dữ liệu hiện tại và lưu vào cơ sở dữ liệu
 	        // Lưu ý: thực hiện logic tính toán cho thông tin thời tiết của 7 ngày tiếp theo ở đây
@@ -274,6 +275,11 @@
 	        // Tạo đối tượng Weather_Nextday với thông tin tính toán
 	        Weather_Nextday nextdayWeather = new Weather_Nextday();
 	        nextdayWeather.setDate(date);
+	        
+	        if(chanceOfRain<45) nextdayWeather.setIcon("https://i.ibb.co/d4XzGBT/Sunny.png");
+	        else if(chanceOfRain>75) nextdayWeather.setIcon("https://i.ibb.co/st7Wxzf/Rain.png");
+	        else nextdayWeather.setIcon("https://i.ibb.co/MkDpxz4/Cloudy.png");
+	        
 	        nextdayWeather.setMaxTemperature(nextMaxTemperature);
 	        nextdayWeather.setMinTemperature(nextMinTemperature);
 	        nextdayWeather.setChanceOfRain(chanceOfRain);

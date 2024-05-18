@@ -27,7 +27,7 @@ public class WeatherController {
 	    @GetMapping("/daily")
 	    public List<Weather_Nextday> getDailyWeatherForecast(@RequestParam String city) {
 	    
-	       //weatherService.updateDailyWeatherForecast(city); // Cập nhật dữ liệu thời tiết của 7 ngày tiếp theo
+	    	//weatherService.updateDailyWeatherForecast(city); // Cập nhật dữ liệu thời tiết của 7 ngày tiếp theo
 	        // Trả về dữ liệu thời tiết của 7 ngày tiếp theo
 	        return weatherService.getDailyWeatherForecast(city);
 	    }
