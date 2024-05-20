@@ -2,13 +2,15 @@
 	
 	import java.time.LocalDate;
 	import java.time.LocalDateTime;
-	import java.time.ZonedDateTime;
+import java.time.LocalTime;
+import java.time.ZonedDateTime;
 	import java.time.format.DateTimeFormatter;
 	import java.util.Map;
 	import java.util.ArrayList;
 	import java.util.List;
-	
-	import com.example.weather.Repository.WeatherNextday_Repo;
+
+import com.example.weather.Repository.RecentWeather_Repo;
+import com.example.weather.Repository.WeatherNextday_Repo;
 	import com.example.weather.Repository.Weather_Repo;
 	import com.example.weather.entity.*;
 	
@@ -28,6 +30,8 @@ import java.util.HashMap;
 	    private Weather_Repo weatherRepository;
 		@Autowired
 		private WeatherNextday_Repo weatherNextday_Repository;
+		@Autowired
+		private RecentWeather_Repo RecentWeather_Repository;
 	    private Random random = new Random();
 	    private final String API_KEY = "4c57a8be9b2b4def8d833930240905";
 	    private final String API_URL = "https://api.weatherapi.com/v1/current.json?key=" + API_KEY + "&q={city}";
@@ -89,16 +93,28 @@ import java.util.HashMap;
 	        
 	        	
 	        	 double currentTemperature = weatherData.getCurrent().getTemp_c();
-	        	 List<Double> hourlyTemperatures = calculateHourlyTemperatures(currentTemperature, currentHour);
-	            
+	        	 List<Double> ListcurrentTemp_nexthour = new ArrayList<>(24);
+	        	 List<Integer> ListcurrentHumi_nexthour = new ArrayList<>(24);
+	        	 List<Double> ListcurrentWindS_nexthour = new ArrayList<>(24);
+	        	 calculateHourlyValue(currentTemperature, weatherData.getCurrent().getHumidity(),weatherData.getCurrent().getWind_kph(), currentHour, ListcurrentTemp_nexthour, ListcurrentHumi_nexthour,ListcurrentWindS_nexthour);
+	        	 for (int i = 0; i < currentHour; i++) {
+		            	String temperature = String.format("%.1f°C", ListcurrentTemp_nexthour.get(i));
+		                String condition = getRandomWeatherCondition(currentTime.plusHours(i - currentHour),temperature);
+		                String icon = condition != null ? DAY_WEATHER_CONDITIONS.getOrDefault(condition, NIGHT_WEATHER_CONDITIONS.get(condition)) : null;
+		                
+		                
+		                String time = currentTime.plusHours(i - currentHour).format(DateTimeFormatter.ofPattern("HH:00"));
+		                RecentWeather_Repository.save(new Recent_Weather (time, temperature, condition, icon, city,currentDate,ListcurrentHumi_nexthour.get(i),ListcurrentWindS_nexthour.get(i)));
+		            }
 	        	 for (int i = currentHour+1; i < 24; i++) {
-	            	String temperature = String.format("%.1f°C", hourlyTemperatures.get(i - currentHour - 1));
+	            	String temperature = String.format("%.1f°C", ListcurrentTemp_nexthour.get(i));
 	                String condition = getRandomWeatherCondition(currentTime.plusHours(i - currentHour),temperature);
 	                String icon = condition != null ? DAY_WEATHER_CONDITIONS.getOrDefault(condition, NIGHT_WEATHER_CONDITIONS.get(condition)) : null;
 	                
 	                
 	                String time = currentTime.plusHours(i - currentHour).format(DateTimeFormatter.ofPattern("HH:00"));
 	                weatherRepository.save(new Weather_Hourly(time, temperature, condition, icon, city,currentDate));
+	                RecentWeather_Repository.save(new Recent_Weather (time, temperature, condition, icon, city,currentDate,ListcurrentHumi_nexthour.get(i),ListcurrentWindS_nexthour.get(i)));
 	            }
 	       
 	    }
@@ -108,27 +124,40 @@ import java.util.HashMap;
 		  6h →10h nhiệt độ tăng đều lại
 		  đến khoảng 11h → 15h nhiệt độ là cao nhất trong ngày
 		 >15h thì nhiệt độ giảm đến 5h sáng hôm sau là giảm từ từ. 
+		 => đồ thị nhiệt biến đổi theo quy luật hàm SIN ta có thể xấp xỉ được.
+		 (Không chỉ nhiệt mà có thể độ ẩm và tốc độ gió sẽ liên quan đến các hàm lượng giác
+		  nhưng thực tế những yếu tố này rất khó tính vì phải đo lường nhiều dữ kiện. Nên ta coi như xấp xỉ)
 		*/
-	    private List<Double> calculateHourlyTemperatures(double currentTemperature, int currentHour) {
-	        List<Double> hourlyTemperatures = new ArrayList<>(24);
+	    private void calculateHourlyValue(double currentTemperature,int humiditycurrent, double wind_speedCurrent, int currentHour,List<Double> Listcurrent_nexthour,List<Integer> Listhumidity_nexthour, List<Double> ListWindSpeed_nexthour) {
+	       
 	        //Ta có thể tính nhiệt độ tại thời điểm t dựa trên 1 số công thức toán học và biểu diễn đồ thị nhiệt độ rồi dùng tích phân
 	        //ta tính được hàm theo quy luật như sau: T(t) = Ttb + A*(sin((2*pi/24)*(t-tmax))+ φ) - có thể chứng minh bằng tích phân dựa trên các đồ thị về thời tiết. Sau khi có Ttb ta có thể ước lượng random giá trị cho Tmax và Tmin. (Tmax > Ttb & Tmin < Ttb)
 	        //Nếu thời gian từ 0->5 thì φ = 0. Các tgian còn lại thì φ = -49*pi/32.
-	       double Temp_avg= 0;
+	      double Temp_avg= 0;
 	      if(currentHour>=0 && currentHour<=5)  Temp_avg = currentTemperature - Math.sin(((2*Math.PI)/24)*(currentHour-14))*4   ;		//7 là A chính là biên độ nhiệt ước tính được dựa trên quan sát tập dữ liệu và lấy ra giá trị trung bình.
 	      else Temp_avg = currentTemperature - Math.sin(((2*Math.PI)*(currentHour-14)/24) - (49*Math.PI)/32)*4 ;
-	        for (int hour = currentHour + 1; hour < 24; hour++) {
+	      
+	      double Htb = humiditycurrent - 15 * Math.cos((2 * Math.PI / 24) * (currentHour - 5) - (7 * Math.PI / 6));
+	      double Wtb = wind_speedCurrent - 7*Math.sin((2 * Math.PI / 24) * (currentHour - 16) );
+	        for (int hour = 0; hour < 24; hour++) {
 	            double temp_t;		//nhiệt độ tại thời điểm t:
+	            int humidity_t;		//độ ẩm tại thời điểm t:
+	            double WindS_t;		//Tốc độ gió tại thời điểm t:
 	            double SIN = 0;
 	            if(hour >=0 && hour <=5)
 	            { SIN = Math.sin(((2*Math.PI)*(hour-14)/24));}
 	            else SIN = Math.sin(((2*Math.PI)*(hour-14)/24) - (49*Math.PI)/32);
 	            temp_t = Temp_avg + 4*(SIN);
-	            hourlyTemperatures.add(temp_t);
-	            
+	            humidity_t = (int) (Htb + 15 * Math.cos((2 * Math.PI / 24) * (hour - 5)));
+	            WindS_t =Math.abs( Wtb +7*Math.sin((2 * Math.PI / 24) * (hour - 16) )) ;
+	           Listcurrent_nexthour.add(temp_t);
+	           Listhumidity_nexthour.add(humidity_t);
+	           ListWindSpeed_nexthour.add(WindS_t);
 	        }
-	        return hourlyTemperatures;
 	    }
+	
+
+	
 	    private String getRandomWeatherCondition(LocalDateTime dateTime, String temperature) {
 	        //Phụ thuộc vào ban ngày hay ban đêm. Nhiệt độ thấp thì có tuyết
 	    	Object[] conditions;
@@ -244,7 +273,13 @@ import java.util.HashMap;
 	        LocalDateTime currentDateTime = LocalDateTime.parse(currentTimeStr, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
 	        // Lấy ngày hiện tại của thành phố từ thời gian hiện tại
 	        LocalDate currentDate = currentDateTime.toLocalDate();
-
+	        //xóa khỏi db những ngày cách hiện tại hơn 3 ngày.
+	        LocalDate threeDaysAgo = currentDate.minusDays(3);
+	        List<Recent_Weather> oldEntries = RecentWeather_Repository.findAll().stream()
+	                .filter(recentWeather -> recentWeather.getDate().isBefore(threeDaysAgo))
+	                .collect(Collectors.toList());
+	        RecentWeather_Repository.deleteAll(oldEntries);
+	        
 	        // Lọc bỏ những ngày đã qua
 	        for (Weather_Nextday weatherNextday : forecast) {
 	            if (weatherNextday.getDate().isBefore(currentDate)) {
@@ -266,50 +301,78 @@ import java.util.HashMap;
 	        return forecast;
 	    }
 	    private Weather_Nextday calculateNextdayWeather(WeatherApiResponse currentWeather, LocalDate date, String city) {
-	    	 String currentTimeStr = currentWeather.getCurrent().getLast_updated();
-	            LocalDateTime currentDateTime = LocalDateTime.parse(currentTimeStr, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
-	    	// Lấy nhiệt độ hiện tại từ dữ liệu thời tiết hiện tại
-	        double currentTemperature = currentWeather.getCurrent().getTemp_c();
+	        String currentTimeStr = currentWeather.getCurrent().getLast_updated();
+	        LocalDateTime currentDateTime = LocalDateTime.parse(currentTimeStr, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
+	        LocalDate currentDate = currentDateTime.toLocalDate();
+	        List<Recent_Weather> recentWeathers = RecentWeather_Repository.findByCityAndDateAfter(city, currentDate.minusDays(3));
 
-	        // Tính toán nhiệt độ trung bình và nhiệt độ tối đa/tối thiểu dựa trên quy luật đã mô tả
-	        double Temp_avg = 0;
-	        int currentHour = LocalDateTime.now().getHour();
-	        if (currentDateTime.getHour() >= 0 && currentDateTime.getHour() <= 5)
-	            Temp_avg = currentTemperature - Math.sin(((2 * Math.PI) / 24) * (currentHour - 14)) * 4;
-	        else
-	            Temp_avg = currentTemperature - Math.sin(((2 * Math.PI) * (currentHour - 14) / 24) - (49 * Math.PI) / 32) * 4;
+	        // Calculate max and min temperatures for each day from recent weather data
+	        Map<LocalDate, Double> maxTemperatures = new HashMap<>();
+	        Map<LocalDate, Double> minTemperatures = new HashMap<>();
+	        Map<LocalDate, Double> avgHumidities = new HashMap<>();
+	        Map<LocalDate, Double> avgWindSpeeds = new HashMap<>();
+	        int count = 0;
+	        for (Recent_Weather recentWeather : recentWeathers) {
+	            LocalDate weatherDate = recentWeather.getDate();
+	            double temperature = Double.parseDouble(recentWeather.getTemperature().replace("°C", "").trim());
+	            maxTemperatures.put(weatherDate, maxTemperatures.getOrDefault(weatherDate, Double.MIN_VALUE));
+	            minTemperatures.put(weatherDate, minTemperatures.getOrDefault(weatherDate, Double.MAX_VALUE));
+	            avgHumidities.put(weatherDate, avgHumidities.getOrDefault(weatherDate, 0.0));
+	            avgWindSpeeds.put(weatherDate, avgWindSpeeds.getOrDefault(weatherDate, 0.0));
+	            maxTemperatures.put(weatherDate, Math.max(maxTemperatures.get(weatherDate), temperature));
+	            minTemperatures.put(weatherDate, Math.min(minTemperatures.get(weatherDate), temperature));
+	            avgHumidities.put(weatherDate, avgHumidities.get(weatherDate) + recentWeather.getHumidity());
+	            avgWindSpeeds.put(weatherDate, avgWindSpeeds.get(weatherDate) + recentWeather.getWind_speed());
+	            count++;
+	        }
 
-	        double currentMaxTemperature = Temp_avg + 4 * Math.sin(((2 * Math.PI) * (14 - 14) / 24) - (49 * Math.PI) / 32);
-	        double currentMinTemperature = Temp_avg + 4 * Math.sin(((2 * Math.PI) * (4 - 14) / 24));
+	        // Calculate average temperatures
+	        double sumMaxTemp = maxTemperatures.values().stream().mapToDouble(Double::doubleValue).sum();
+	        double sumMinTemp = minTemperatures.values().stream().mapToDouble(Double::doubleValue).sum();
+	        double avgMaxTemp = sumMaxTemp / maxTemperatures.size();
+	        double avgMinTemp = sumMinTemp / minTemperatures.size();
 
-	        // Random nhiệt độ tối đa và tối thiểu cho ngày tiếp theo
-	        double nextMaxTemperature = currentMaxTemperature + (random.nextDouble() * 4); // Giả sử tăng khoảng 1-3 độ C
-	        double nextMinTemperature = currentMinTemperature + (random.nextDouble() * 4); // Giả sử tăng khoảng 1-3 độ C
+	        // Calculate average humidity and wind speed
+	        double avgHumidity = avgHumidities.values().stream().mapToDouble(Double::doubleValue).sum() / count;
+	        double avgWindSpeed = avgWindSpeeds.values().stream().mapToDouble(Double::doubleValue).sum() / count;
+
+	        // Generate random variation around the calculated average values
+	        double nextMaxTemperature = avgMaxTemp + (random.nextDouble() * 4 - 2); // Random variation of ±2 degrees
+	        double nextMinTemperature = avgMinTemp + (random.nextDouble() * 4 - 2);
+	        double nextHumidity = avgHumidity + (random.nextDouble() * 10 - 5); // Random variation of ±5 percentage points
+	        double nextWindSpeed = avgWindSpeed + (random.nextDouble() * 4 - 2); // Random variation of ±2 m/s
 
 	        // Tính toán khả năng mưa và xác định điều kiện thời tiết cho ngày tiếp theo
 	        int chanceOfRain = random.nextInt(90) + 1;
-//	        String condition;
-//	        if (chanceOfRain > 70) {
-//	            condition = "Rain";
-//	        } else {
-//	            condition = "Sunny";
-//	        }
 
 	        // Tạo đối tượng Weather_Nextday với thông tin tính toán
 	        Weather_Nextday nextdayWeather = new Weather_Nextday();
 	        nextdayWeather.setDate(date);
-	        
-	        if(chanceOfRain<45) nextdayWeather.setIcon("https://i.ibb.co/d4XzGBT/Sunny.png");
-	        else if(chanceOfRain>75) nextdayWeather.setIcon("https://i.ibb.co/st7Wxzf/Rain.png");
-	        else nextdayWeather.setIcon("https://i.ibb.co/MkDpxz4/Cloudy.png");
-	        
+
+	        if (chanceOfRain < 45) 
+	            nextdayWeather.setIcon("https://i.ibb.co/d4XzGBT/Sunny.png");
+	        else if (chanceOfRain > 75) 
+	            nextdayWeather.setIcon("https://i.ibb.co/st7Wxzf/Rain.png");
+	        else 
+	            nextdayWeather.setIcon("https://i.ibb.co/MkDpxz4/Cloudy.png");
+
 	        nextdayWeather.setMaxTemperature(nextMaxTemperature);
 	        nextdayWeather.setMinTemperature(nextMinTemperature);
+	        nextdayWeather.setHumidity((int)nextHumidity);
+	        nextdayWeather.setWind_speed(nextWindSpeed);
 	        nextdayWeather.setChanceOfRain(chanceOfRain);
 	        nextdayWeather.setDayOfWeek(date.getDayOfWeek().toString());
 	        nextdayWeather.setCity(city);  // Set the city attribute
+
 	        return nextdayWeather;
 	    }
+
+
+
+	    
+	    
+	  
+	
 	    
 	
 	}

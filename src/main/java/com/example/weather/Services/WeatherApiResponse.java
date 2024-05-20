@@ -43,7 +43,26 @@ public class WeatherApiResponse {
     public static class Current {
         private double temp_c;
         private String last_updated;
-        // Getters and Setters
+        private int humidity;
+        private float wind_kph;
+        
+        public int getHumidity() {
+			return humidity;
+		}
+
+		public void setHumidity(int humidity) {
+			this.humidity = humidity;
+		}
+
+		public float getWind_kph() {
+			return wind_kph;
+		}
+
+		public void setWind_kph(float wind_kph) {
+			this.wind_kph = wind_kph;
+		}
+
+		// Getters and Setters
         public double getTemp_c() {
             return temp_c;
         }
